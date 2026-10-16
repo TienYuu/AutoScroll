@@ -19,6 +19,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.app.KeyguardManager
+import android.os.PowerManager
+
 
 class AutoScrollService : AccessibilityService() {
 
@@ -31,7 +34,6 @@ class AutoScrollService : AccessibilityService() {
     private var modeInterval = false
 
     private var running = false
-    private var blocked = false
     private val tickMs = 400L
     private val handler = Handler(Looper.getMainLooper())
 
@@ -51,7 +53,7 @@ class AutoScrollService : AccessibilityService() {
     private val loop = object : Runnable {
         override fun run() {
             if (!running) return
-            if (!blocked) {
+            if (!isBlocked()) {
                 if (modeInterval) swipe(0.75f, 0.25f, 200) else swipeSlow()
             }
             handler.postDelayed(this, if (modeInterval) intervalSec * 1000L else tickMs)
@@ -66,12 +68,17 @@ class AutoScrollService : AccessibilityService() {
         registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
 
-    override fun onAccessibilityEvent(e: AccessibilityEvent?) {
-        if (e == null || e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = e.packageName?.toString() ?: return
-        if (pkg == packageName || pkg.contains("inputmethod") || pkg.contains("keyboard")) return
-        blocked = pkg == "com.android.systemui" || pkg in homePkgs
+    override fun onAccessibilityEvent(e: AccessibilityEvent?) {}
+    
+    
+    private fun isBlocked(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        if (!pm.isInteractive || km.isKeyguardLocked) return true
+        val pkg = rootInActiveWindow?.packageName?.toString() ?: return false
+        return pkg == "com.android.systemui" || pkg == packageName || pkg in homePkgs
     }
+
 
     override fun onInterrupt() {}
 
@@ -107,7 +114,7 @@ class AutoScrollService : AccessibilityService() {
         val dm = resources.displayMetrics
         val dist = speedPxPerSec * tickMs / 1000f
         val startY = dm.heightPixels * 0.7f
-        swipePath(dm.widthPixels / 2f, startY, startY - dist, tickMs)
+        swipePath(dm.widthPixels / 2f, startY, startY - dist, tickMs - 50)
     }
 
     private fun swipe(fromRatio: Float, toRatio: Float, duration: Long) {
